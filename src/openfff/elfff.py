@@ -1,35 +1,38 @@
 import numpy as np
 from collections import namedtuple
 from particle import ParticleCloud
+from fields import  ElectricField
 
 num_particles = 10_000
-boltzmann_constant = 1.380649E-23 # J/K
+
 dynamic_viscosity_carrier = 0.001  # Pa*s
 temperature = 293.15  # K
 particle_diameter = 10E-9  # 10 nm
 electrophoretic_mobility = -4.0E-8  # µm X cm / (V X s) E-6E-2 = E-8
 dt = 0.5  # seconds
 carrier_velocity = 1.0E-2 / 60.0  # m/s (1 ml/ min = 1cm^3/60 seconds, 1 cm /60 seconds)
-E = 25 # V/m
+e_field = ElectricField(magnitude=25) # V/m
 
-diffusion_coeff = (temperature * boltzmann_constant) / (3 * np.pi * dynamic_viscosity_carrier * particle_diameter)
 
 channel_width = 3.2E-2  # cm
 channel_height = 178E-6  # µm
 
-theoretical = diffusion_coeff / (electrophoretic_mobility * E)
+particle_cloud = ParticleCloud(n_particles=num_particles,
+                               initial_coordinate=(0, 0.75E-3, channel_height, channel_height),
+                               particle_diameter=10E-9)
+
+diff_coeff = particle_cloud.get_diffusion_coef(temp=temperature,
+                                               dynamic_visc=dynamic_viscosity_carrier)
+
+theoretical = diff_coeff / (e_field.get_component_y(em=electrophoretic_mobility))
+
 print(f'Theoretical height: {theoretical:.2E}')
 
 ColumnIO = namedtuple("ColumnIO", "x1 x2 y1 y2")
 
-inlet = ColumnIO(0, 0.75E-3, channel_height, channel_height)
-
 outlet_x = channel_width
 outlet_y = (0, channel_height)
 
-# randomly distribute particles at the inlet
-particle_cloud = ParticleCloud(n_particles=num_particles,
-                               initial_coordinate=(0, 0.75E-3, channel_height, channel_height))
 
 # calculate the initial average height
 y_avg = particle_cloud.average_y()
@@ -59,14 +62,14 @@ def step(pc: ParticleCloud):
     # propagate x coordinates
     # x(t+dt) = x(t) + n * ld(dt) + vpx * dt
     n = np.random.normal(loc=0, scale=1, size=num_particles)
-    ld = np.sqrt(2.0 * diffusion_coeff * dt)
+    ld = np.sqrt(2.0 * diff_coeff * dt)
     vpx = 6.0 * carrier_velocity * (
                 np.divide(pc.y, channel_height) - np.square(np.divide(pc.y, channel_height)))
     pc.x += n * ld + vpx * dt
     # propagate y coordinates
     # y(t+dt) = y(t) + n * ld(dt) + vpy * dt
-    vpy = electrophoretic_mobility * E
-    pc.y += n * ld + vpy * dt
+    y_field = e_field.get_component_y(em=electrophoretic_mobility) * dt
+    pc.y += n * ld + y_field
 
 t = 0
 while t <= 300:
